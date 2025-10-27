@@ -1,4 +1,3 @@
-// User types
 export interface User {
   id: number;
   username: string;
@@ -10,7 +9,6 @@ export interface AuthResponse {
   user: User;
 }
 
-// Item types
 export interface Item {
   id: number;
   text: string;
@@ -40,11 +38,11 @@ export interface UpdateItemData {
   version: number;
 }
 
-// WebSocket types
 export interface WebSocketMessage {
   event: 'authenticated' | 'created' | 'updated' | 'deleted' | 'error';
   payload: {
     userId?: number;
+    connectionId?: string; 
     item?: Item;
     message?: string;
   };
@@ -55,7 +53,6 @@ export interface WebSocketAuthMessage {
   token: string;
 }
 
-// Auth Context types
 export interface AuthContextType {
   user: User | null;
   loading: boolean;
@@ -72,7 +69,6 @@ export interface AuthResult {
   error?: string;
 }
 
-// Form types
 export interface LoginFormData {
   username: string;
   password: string;

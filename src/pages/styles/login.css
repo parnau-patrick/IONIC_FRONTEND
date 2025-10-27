@@ -1,0 +1,36 @@
+/* ========== FORM SPACING ========== */
+.login-form-item {
+  margin-top: 20px;
+}
+
+.login-form-item:first-of-type {
+  margin-top: 10px;  /* Mai puțin pentru primul input */}
+
+.login-submit-button {
+  margin-top: 30px;
+}
+
+.login-register-link {
+  text-align: center;
+  display: block;
+  margin-top: 25px;
+}
+
+/* ========== CARD CENTERING ========== */
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 500px;
+}
+
+/* ========== OPTIONAL: LARGER INPUTS ========== */
+.login-form-item ion-input {
+  font-size: 16px;
+  padding: 10px 0;
+}

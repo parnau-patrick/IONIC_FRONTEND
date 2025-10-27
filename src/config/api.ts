@@ -1,9 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Base URL pentru backend
 const API_BASE_URL = 'http://localhost:3000';
 
-// Creează instanță axios
+let currentConnectionId: string | null = null;
+
+export const setConnectionId = (id: string | null) => {
+  currentConnectionId = id;
+  console.log('API connectionId updated:', id);
+};
+
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -11,13 +16,17 @@ const api = axios.create({
   }
 });
 
-// Request interceptor - adaugă token la fiecare request
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('token');
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    
+    if (currentConnectionId && config.headers) {
+      config.headers['x-connection-id'] = currentConnectionId;
+    }
+    
     return config;
   },
   (error: AxiosError) => {
@@ -25,7 +34,6 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor - gestionează erori de autentificare
 api.interceptors.response.use(
   (response) => {
     return response;

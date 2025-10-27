@@ -21,6 +21,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { LoginFormData } from '../types';
 
+import "./styles/login.css";
+
 const Login = () => {
   const history = useHistory();
   const { login } = useAuth();
@@ -57,13 +59,8 @@ const Login = () => {
       </IonHeader>
       
       <IonContent className="ion-padding">
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'center', 
-          alignItems: 'center', 
-          minHeight: '80vh' 
-        }}>
-          <IonCard style={{ width: '100%', maxWidth: '500px' }}>
+        <div className="login-container">
+          <IonCard className="login-card">
             <IonCardHeader>
               <IonCardTitle>Welcome Back!</IonCardTitle>
               <IonCardSubtitle>Sign in to your account</IonCardSubtitle>
@@ -77,8 +74,8 @@ const Login = () => {
               )}
               
               <form onSubmit={handleSubmit}>
-                <IonItem>
-                  <IonLabel position="floating">Username</IonLabel>
+                <IonItem className="login-form-item">
+                  <IonLabel position="stacked">Username</IonLabel>
                   <IonInput
                     type="text"
                     value={formData.username}
@@ -87,8 +84,8 @@ const Login = () => {
                   />
                 </IonItem>
                 
-                <IonItem>
-                  <IonLabel position="floating">Password</IonLabel>
+                <IonItem className="login-form-item">
+                  <IonLabel position="stacked">Password</IonLabel>
                   <IonInput
                     type="password"
                     value={formData.password}
@@ -101,13 +98,13 @@ const Login = () => {
                   expand="block" 
                   type="submit" 
                   disabled={loading}
-                  style={{ marginTop: '20px' }}
+                  className="login-submit-button"
                 >
                   {loading ? <IonSpinner name="crescent" /> : 'Login'}
                 </IonButton>
               </form>
               
-              <IonText color="medium" style={{ textAlign: 'center', display: 'block', marginTop: '20px' }}>
+              <IonText color="medium" className="login-register-link">
                 Don't have an account? <a href="/register">Register here</a>
               </IonText>
             </IonCardContent>

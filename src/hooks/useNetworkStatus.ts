@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 
-// Hook pentru detectare online/offline
 export const useNetworkStatus = (): boolean => {
   const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
 

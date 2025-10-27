@@ -37,7 +37,6 @@ const ItemDetail = () => {
   const [isEditing, setIsEditing] = useState<boolean>(false);
   const [editText, setEditText] = useState<string>('');
 
-  // Fetch item
   useEffect(() => {
     const fetchItem = async () => {
       try {
@@ -56,7 +55,6 @@ const ItemDetail = () => {
     fetchItem();
   }, [id]);
 
-  // Update item
   const handleUpdate = async (): Promise<void> => {
     if (!editText.trim() || editText.length < 3) {
       alert('Item text must be at least 3 characters');
@@ -86,7 +84,6 @@ const ItemDetail = () => {
     }
   };
 
-  // Toggle completed
   const handleToggleCompleted = async (): Promise<void> => {
     if (!item) return;
 
@@ -207,7 +204,7 @@ const ItemDetail = () => {
         <IonCard>
           <IonCardHeader>
             <IonCardTitle>
-              {item.completed ? '✅' : '⏳'} {isEditing ? 'Edit Item' : 'Item Information'}
+              {item.completed ? '' : ''} {isEditing ? 'Edit Item' : 'Item Information'}
             </IonCardTitle>
           </IonCardHeader>
           
@@ -236,7 +233,7 @@ const ItemDetail = () => {
                   />
                   <IonLabel>
                     <h2>Status</h2>
-                    <p>{item.completed ? '✅ Completed' : '⏳ Incomplete'}</p>
+                    <p>{item.completed ? 'Completed' : 'Incomplete'}</p>
                   </IonLabel>
                 </IonItem>
                 

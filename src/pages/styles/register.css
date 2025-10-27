@@ -1,0 +1,42 @@
+
+.register-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80vh;
+}
+
+.register-card {
+  width: 100%;
+  max-width: 500px;
+}
+
+.icon-inline {
+  margin-right: 10px;
+  vertical-align: middle;
+}
+
+.icon-label {
+  margin-right: 5px;
+}
+
+.mt-20 {
+  margin-top: 20px;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.link-primary {
+  color: var(--ion-color-primary);
+  text-decoration: none;
+}
+
+
+.error-box {
+  padding: 10px;
+  background-color: rgba(255, 0, 0, 0.1);
+  border-radius: 8px;
+  margin-bottom: 15px;
+}

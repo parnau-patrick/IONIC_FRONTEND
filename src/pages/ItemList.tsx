@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useHistory } from 'react-router-dom';
 import {
   IonPage,
@@ -25,49 +25,64 @@ import {
   IonChip,
   IonBadge,
   IonRefresher,
-  IonRefresherContent
+  IonRefresherContent,
+  IonAlert
 } from '@ionic/react';
+
 import { 
   addOutline, 
   logOutOutline, 
   trashOutline,
   wifiOutline,
-  cloudOfflineOutline
+  cloudOfflineOutline,
+  warningOutline,
+  cloudUploadOutline
 } from 'ionicons/icons';
+
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
-import api from '../config/api';
+import api, { setConnectionId } from '../config/api';
 import { Item, ItemsResponse, WebSocketMessage } from '../types';
-import { getItems as getLocalItems, setItems as setLocalItems } from '../utils/storage';
+import "./styles/itemList.css";
+import { 
+  getItems as getLocalItems, 
+  setItems as setLocalItems,
+  getPendingOperations,
+  addPendingOperation,
+  removePendingOperation,
+  PendingOperation
+} from '../utils/storage';
 
 const ItemList = () => {
   const history = useHistory();
   const { user, logout } = useAuth();
   const isOnline = useNetworkStatus();
   
-  // Track local operations to prevent WebSocket duplicates
-  const localOperationsRef = useRef<Set<number>>(new Set());
-  
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   
-  // Pagination state
   const [page, setPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
   const limit = 10;
   
-  // Search & Filter state
   const [searchText, setSearchText] = useState<string>('');
   const [filterCompleted, setFilterCompleted] = useState<string>('all');
   
-  // New item form
   const [showModal, setShowModal] = useState<boolean>(false);
   const [newItemText, setNewItemText] = useState<string>('');
+  
+  const [pendingOps, setPendingOps] = useState<PendingOperation[]>([]);
+  const [showPendingAlert, setShowPendingAlert] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
-  // Fetch items from server
+  useEffect(() => {
+    const operations = getPendingOperations();
+    setPendingOps(operations);
+  }, []);
+
   const fetchItems = useCallback(async () => {
     if (!isOnline) {
       const localItems = getLocalItems();
@@ -104,7 +119,10 @@ const ItemList = () => {
       setLoading(false);
     } catch (err) {
       console.error('Error fetching items:', err);
-      setError('Failed to load items');
+      
+      const localItems = getLocalItems();
+      setItems(localItems);
+      setError('Failed to load items from server. Showing cached data.');
       setLoading(false);
     }
   }, [page, searchText, filterCompleted, isOnline]);
@@ -113,135 +131,282 @@ const ItemList = () => {
     fetchItems();
   }, [fetchItems]);
 
-  // WebSocket - real-time updates
+  useEffect(() => {
+    if (isOnline && pendingOps.length > 0 && !isSyncing) {
+      console.log('Back online! Auto-syncing pending operations...');
+      syncPendingOperations();
+    }
+  }, [isOnline, pendingOps.length]);
+
+  const syncPendingOperations = async () => {
+    if (pendingOps.length === 0) return;
+    
+    setIsSyncing(true);
+    console.log(`Syncing ${pendingOps.length} pending operations...`);
+    
+    const createOps = pendingOps.filter(op => op.type === 'create');
+    const otherOps = pendingOps.filter(op => op.type !== 'create');
+    
+    const tempIdMap = new Map<number, number>();
+    
+    for (const op of createOps) {
+      try {
+        const response = await api.post('/api/items', {
+          text: op.item.text,
+          completed: op.item.completed
+        });
+        
+        const newItem = response.data;
+        const tempId = op.item.id;
+        
+        if (tempId) {
+          tempIdMap.set(tempId, newItem.id);
+        }
+        
+        console.log(`Synced CREATE: ${op.item.text} (temp: ${tempId} → real: ${newItem.id})`);
+        removePendingOperation(op.id);
+      } catch (err: any) {
+        console.error('Failed to sync CREATE:', op, err);
+        
+        if (err.response?.status === 404 || err.response?.status === 400) {
+          console.log('Removing invalid CREATE operation from pending');
+          removePendingOperation(op.id);
+        }
+      }
+    }
+  
+    for (const op of otherOps) {
+      try {
+        const itemId = op.item.id;
+        
+        if (itemId && itemId > 1000000000) {
+          console.log(`Skipping ${op.type} on temporary ID: ${itemId}`);
+          removePendingOperation(op.id);
+          continue;
+        }
+      
+        const realId = tempIdMap.get(itemId!) || itemId;
+        
+        if (op.type === 'update') {
+          await api.put(`/api/items/${realId}`, {
+            text: op.item.text,
+            completed: op.item.completed,
+            version: op.item.version
+          });
+          console.log(`Synced UPDATE: ${realId}`);
+        } else if (op.type === 'delete') {
+          await api.delete(`/api/items/${realId}`);
+          console.log(`Synced DELETE: ${realId}`);
+        }
+        
+        removePendingOperation(op.id);
+      } catch (err: any) {
+        console.error(`Failed to sync ${op.type}:`, op, err);
+        
+        if (err.response?.status === 404) {
+          console.log(`Item not found (404), removing from pending: ${op.item.id}`);
+          removePendingOperation(op.id);
+        }
+      }
+    }
+    
+    const remaining = getPendingOperations();
+    setPendingOps(remaining);
+    setIsSyncing(false);
+    
+    if (remaining.length === 0) {
+      console.log('All operations synced successfully!');
+      await fetchItems();
+    } else {
+      console.log(`${remaining.length} operations still pending`);
+    }
+  };
+
   const handleWebSocketMessage = useCallback((data: WebSocketMessage) => {
-    console.log('📨 WebSocket message:', data);
+    console.log('WebSocket message:', data);
     
     if (data.event === 'created' && data.payload.item) {
       const itemId = data.payload.item!.id;
       
-      // Ignore if it's our own local operation
-      if (localOperationsRef.current.has(itemId)) {
-        console.log('🚫 Ignoring own WebSocket event for item:', itemId);
-        return;
-      }
-      
-      // Check if item already exists to prevent duplicates
       setItems(prev => {
         const exists = prev.some(item => item.id === itemId);
         if (exists) {
-          console.log('⚠️ Item already exists, skipping');
+          console.log('Item already exists, skipping');
           return prev;
         }
-        console.log('✅ Adding item from WebSocket:', itemId);
-        return [data.payload.item!, ...prev.slice(0, limit - 1)];
+        console.log('Adding item from WebSocket:', itemId);
+        const updated = [data.payload.item!, ...prev];
+        return updated.slice(0, limit);
       });
-      setTotal(prev => prev + 1);
+      
+      setTotal(prev => {
+        const newTotal = prev + 1;
+        const newTotalPages = Math.ceil(newTotal / limit);
+        setTotalPages(newTotalPages);
+        return newTotal;
+      });
     } else if (data.event === 'updated' && data.payload.item) {
-      const itemId = data.payload.item!.id;
-      
-      // Ignore if it's our own local operation
-      if (localOperationsRef.current.has(itemId)) {
-        console.log('🚫 Ignoring own update WebSocket event for item:', itemId);
-        return;
-      }
-      
-      console.log('🔄 Updating item from WebSocket:', itemId);
+      console.log('Updating item from WebSocket:', data.payload.item!.id);
       setItems(prev => prev.map(item => 
         item.id === data.payload.item!.id ? data.payload.item! : item
       ));
     } else if (data.event === 'deleted' && data.payload.item) {
       const itemId = data.payload.item!.id;
+      console.log('Deleting item from WebSocket:', itemId);
       
-      // Ignore if it's our own local operation
-      if (localOperationsRef.current.has(itemId)) {
-        console.log('🚫 Ignoring own delete WebSocket event for item:', itemId);
-        return;
-      }
+      setItems(prev => prev.filter(item => item.id !== itemId));
       
-      console.log('🗑️ Deleting item from WebSocket:', itemId);
-      setItems(prev => prev.filter(item => item.id !== data.payload.item!.id));
-      setTotal(prev => prev - 1);
+      setTotal(prev => {
+        const newTotal = prev - 1;
+        const newTotalPages = Math.ceil(newTotal / limit);
+        setTotalPages(newTotalPages);
+        return newTotal;
+      });
     }
-  }, []);
+  }, [limit]);
 
-  useWebSocket('ws://localhost:3000', handleWebSocketMessage);
+  const { isConnected, connectionId } = useWebSocket('ws://localhost:3000', handleWebSocketMessage);
 
-  // Create item
+  useEffect(() => {
+    if (connectionId) {
+      setConnectionId(connectionId);
+    }
+  }, [connectionId]);
+
   const handleCreateItem = async (): Promise<void> => {
     if (!newItemText.trim() || newItemText.length < 3) {
       alert('Item text must be at least 3 characters');
       return;
     }
 
-    try {
-      const response = await api.post<Item>('/api/items', {
-        text: newItemText,
-        completed: false
-      });
-      
-      const newItem = response.data;
-      
-      // Mark as local operation to ignore WebSocket duplicate
-      localOperationsRef.current.add(newItem.id);
-      console.log('➕ Created item locally:', newItem.id);
-      
-      setItems(prev => [newItem, ...prev]);
-      setTotal(prev => prev + 1);
-      
-      setNewItemText('');
-      setShowModal(false);
-      
-      // Clean up after 2 seconds
-      setTimeout(() => {
-        localOperationsRef.current.delete(newItem.id);
-        console.log('🧹 Cleaned up local operation tracking for:', newItem.id);
-      }, 2000);
-    } catch (err) {
-      console.error('Error creating item:', err);
-      alert('Failed to create item');
+    const newItemData = {
+      text: newItemText,
+      completed: false
+    };
+
+    if (isOnline) {
+      try {
+        const response = await api.post<Item>('/api/items', newItemData);
+        const newItem = response.data;
+        
+        const newTotal = total + 1;
+        setTotal(newTotal);
+        
+        const newTotalPages = Math.ceil(newTotal / limit);
+        setTotalPages(newTotalPages);
+        
+        setItems(prev => {
+          const updated = [newItem, ...prev];
+          return updated.slice(0, limit);
+        });
+        
+        setNewItemText('');
+        setShowModal(false);
+        
+        console.log(`Item created online. Total: ${newTotal}, Pages: ${newTotalPages}`);
+      } catch (err) {
+        console.error('Failed to create item online, saving locally:', err);
+        await createItemOffline(newItemData);
+      }
+    } else {
+      await createItemOffline(newItemData);
     }
   };
 
-  // Toggle completed
+  const createItemOffline = async (itemData: { text: string; completed: boolean }) => {
+    const tempId = `temp-${Date.now()}-${Math.random()}`;
+    const tempItem: Item = {
+      id: Date.now(),
+      text: itemData.text,
+      completed: itemData.completed,
+      version: 1,
+      userId: user?.id || 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    
+    const pendingOp: PendingOperation = {
+      id: tempId,
+      type: 'create',
+      item: tempItem,
+      timestamp: Date.now()
+    };
+    
+    addPendingOperation(pendingOp);
+    setPendingOps(prev => [...prev, pendingOp]);
+    
+    setItems(prev => {
+      const updated = [tempItem, ...prev];
+      setLocalItems(updated);
+      return updated.slice(0, limit);
+    });
+    
+    setTotal(prev => prev + 1);
+    setTotalPages(prev => Math.ceil((total + 1) / limit));
+    
+    setNewItemText('');
+    setShowModal(false);
+    
+    console.log('Item saved offline (pending sync)');
+  };
+
   const handleToggleCompleted = async (item: Item, e: any): Promise<void> => {
     e.stopPropagation();
     
-    try {
-      // Mark as local operation
-      localOperationsRef.current.add(item.id);
-      
-      const response = await api.put<Item>(`/api/items/${item.id}`, {
-        text: item.text,
-        completed: !item.completed,
-        version: item.version
-      });
-      
-      const updatedItem = response.data;
-      setItems(prev => prev.map(i => 
-        i.id === updatedItem.id ? updatedItem : i
-      ));
-      
-      // Clean up after 2 seconds
-      setTimeout(() => {
-        localOperationsRef.current.delete(item.id);
-      }, 2000);
-    } catch (err: any) {
-      console.error('Error updating item:', err);
-      
-      // Remove from tracking on error
-      localOperationsRef.current.delete(item.id);
-      
-      if (err.response?.status === 409) {
-        alert('Version conflict! Item was modified by another user. Refreshing...');
-        fetchItems();
-      } else {
-        alert('Failed to update item');
+    const updatedData = {
+      text: item.text,
+      completed: !item.completed,
+      version: item.version
+    };
+
+    setItems(prev => prev.map(i => 
+      i.id === item.id ? { ...i, completed: !i.completed } : i
+    ));
+
+    if (isOnline) {
+      try {
+        const response = await api.put<Item>(`/api/items/${item.id}`, updatedData);
+        const updatedItem = response.data;
+        
+        setItems(prev => prev.map(i => 
+          i.id === updatedItem.id ? updatedItem : i
+        ));
+      } catch (err: any) {
+        console.error('Failed to update item online:', err);
+        
+        if (err.response?.status === 409) {
+          alert('Version conflict! Item was modified by another user. Refreshing...');
+          fetchItems();
+        } else if (err.response?.status === 404) {
+          console.log('Item not found on server, removing from local list');
+          setItems(prev => prev.filter(i => i.id !== item.id));
+        } else {
+          const pendingOp: PendingOperation = {
+            id: `update-${item.id}-${Date.now()}`,
+            type: 'update',
+            item: { ...item, ...updatedData },
+            timestamp: Date.now()
+          };
+          
+          addPendingOperation(pendingOp);
+          setPendingOps(prev => [...prev, pendingOp]);
+          console.log('Update saved offline (pending sync)');
+        }
       }
+    } else {
+      const pendingOp: PendingOperation = {
+        id: `update-${item.id}-${Date.now()}`,
+        type: 'update',
+        item: { ...item, ...updatedData },
+        timestamp: Date.now()
+      };
+      
+      addPendingOperation(pendingOp);
+      setPendingOps(prev => [...prev, pendingOp]);
+      console.log('Update saved offline (pending sync)');
     }
   };
 
-  // Delete item
   const handleDeleteItem = async (itemId: number, e: any): Promise<void> => {
     e.stopPropagation();
     
@@ -249,40 +414,68 @@ const ItemList = () => {
       return;
     }
 
-    try {
-      // Mark as local operation
-      localOperationsRef.current.add(itemId);
+    setItems(prev => prev.filter(item => item.id !== itemId));
+    
+    const newTotal = total - 1;
+    setTotal(newTotal);
+    
+    const newTotalPages = Math.ceil(newTotal / limit);
+    setTotalPages(newTotalPages);
+    
+    if (page > newTotalPages && newTotalPages > 0) {
+      setPage(newTotalPages);
+    }
+
+    if (isOnline) {
+      try {
+        await api.delete(`/api/items/${itemId}`);
+        console.log(`Item deleted online: ${itemId}`);
+      } catch (err: any) {
+        console.error('Failed to delete item online:', err);
+        
+        if (err.response?.status === 404) {
+          console.log('Item already deleted on server');
+        } else {
+          const pendingOp: PendingOperation = {
+            id: `delete-${itemId}-${Date.now()}`,
+            type: 'delete',
+            item: { id: itemId },
+            timestamp: Date.now()
+          };
+          
+          addPendingOperation(pendingOp);
+          setPendingOps(prev => [...prev, pendingOp]);
+          console.log('Delete saved offline (pending sync)');
+        }
+      }
+    } else {
+      const pendingOp: PendingOperation = {
+        id: `delete-${itemId}-${Date.now()}`,
+        type: 'delete',
+        item: { id: itemId },
+        timestamp: Date.now()
+      };
       
-      await api.delete(`/api/items/${itemId}`);
-      setItems(prev => prev.filter(item => item.id !== itemId));
-      setTotal(prev => prev - 1);
-      
-      // Clean up after 2 seconds
-      setTimeout(() => {
-        localOperationsRef.current.delete(itemId);
-      }, 2000);
-    } catch (err) {
-      console.error('Error deleting item:', err);
-      
-      // Remove from tracking on error
-      localOperationsRef.current.delete(itemId);
-      
-      alert('Failed to delete item');
+      addPendingOperation(pendingOp);
+      setPendingOps(prev => [...prev, pendingOp]);
+      console.log('Delete saved offline (pending sync)');
     }
   };
 
-  // View item details
   const handleViewItem = (itemId: number) => {
     history.push(`/items/${itemId}`);
   };
 
-  // Pull to refresh
   const handleRefresh = async (event: any) => {
     await fetchItems();
+    
+    if (isOnline && pendingOps.length > 0) {
+      await syncPendingOperations();
+    }
+    
     event.detail.complete();
   };
 
-  // Pagination
   const handlePrevPage = (): void => {
     if (page > 1) {
       setPage(page - 1);
@@ -299,12 +492,28 @@ const ItemList = () => {
     <IonPage>
       <IonHeader>
         <IonToolbar color="primary">
-          <IonTitle>📝 Item Manager</IonTitle>
+          <IonTitle>Item Manager</IonTitle>
           <IonButtons slot="end">
             <IonChip>
               <IonIcon icon={isOnline ? wifiOutline : cloudOfflineOutline} />
               <IonLabel>{isOnline ? 'Online' : 'Offline'}</IonLabel>
             </IonChip>
+            {isConnected && (
+              <IonChip color="success">
+                <IonLabel>WS</IonLabel>
+              </IonChip>
+            )}
+            {pendingOps.length > 0 && (
+              <IonChip color="warning" onClick={() => setShowPendingAlert(true)}>
+                <IonIcon icon={warningOutline} />
+                <IonLabel>{pendingOps.length}</IonLabel>
+              </IonChip>
+            )}
+            {isSyncing && (
+              <IonChip color="secondary">
+                <IonSpinner name="crescent" className="header-chip-spinner" />
+              </IonChip>
+            )}
             <IonButton onClick={logout}>
               <IonIcon icon={logOutOutline} />
             </IonButton>
@@ -347,17 +556,56 @@ const ItemList = () => {
           <IonRefresherContent />
         </IonRefresher>
         
+        {pendingOps.length > 0 && (
+          <div className="pending-banner">
+            <div className="pending-banner-content">
+              <IonIcon icon={warningOutline} color="warning" size="small" />
+              <IonText color="warning">
+                <strong>{pendingOps.length} pending operation(s)</strong> waiting to sync
+              </IonText>
+            </div>
+            
+            <div className="pending-banner-actions">
+              {isSyncing && (
+                <div className="pending-syncing-indicator">
+                  <IonSpinner name="crescent" color="warning" style={{ width: '16px', height: '16px' }} />
+                  <IonText className="pending-syncing-text">
+                    Syncing...
+                  </IonText>
+                </div>
+              )}
+              
+              {!isOnline && !isSyncing && (
+                <IonText className="pending-offline-text">
+                  Will sync when online
+                </IonText>
+              )}
+              
+              {isOnline && !isSyncing && (
+                <IonButton 
+                  size="small" 
+                  color="warning" 
+                  onClick={syncPendingOperations}
+                >
+                  <IonIcon icon={cloudUploadOutline} slot="start" />
+                  Sync Now
+                </IonButton>
+              )}
+            </div>
+          </div>
+        )}
+        
         {loading ? (
-          <div style={{ textAlign: 'center', marginTop: '50px' }}>
+          <div className="loading-container">
             <IonSpinner name="crescent" />
             <p>Loading items...</p>
           </div>
         ) : error ? (
           <IonText color="danger">
-            <p style={{ textAlign: 'center', marginTop: '50px' }}>{error}</p>
+            <p className="error-container">{error}</p>
           </IonText>
         ) : items.length === 0 ? (
-          <div style={{ textAlign: 'center', marginTop: '50px' }}>
+          <div className="empty-state">
             <IonText color="medium">
               <p>No items found. Create your first item!</p>
             </IonText>
@@ -373,10 +621,7 @@ const ItemList = () => {
                     onIonChange={(e) => handleToggleCompleted(item, e)}
                   />
                   <IonLabel>
-                    <h2 style={{ 
-                      textDecoration: item.completed ? 'line-through' : 'none',
-                      color: item.completed ? 'var(--ion-color-medium)' : 'inherit'
-                    }}>
+                    <h2 className={`item-text ${item.completed ? 'completed' : ''}`}>
                       {item.text}
                     </h2>
                     <p>
@@ -394,13 +639,7 @@ const ItemList = () => {
               ))}
             </IonList>
             
-            {/* Pagination */}
-            <div style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: '20px'
-            }}>
+            <div className="pagination-container">
               <IonButton 
                 onClick={handlePrevPage} 
                 disabled={page === 1}
@@ -415,7 +654,7 @@ const ItemList = () => {
               
               <IonButton 
                 onClick={handleNextPage} 
-                disabled={page === totalPages}
+                disabled={page === totalPages || totalPages === 0}
                 size="small"
               >
                 Next
@@ -424,14 +663,12 @@ const ItemList = () => {
           </>
         )}
         
-        {/* FAB Button */}
         <IonFab vertical="bottom" horizontal="end" slot="fixed">
           <IonFabButton onClick={() => setShowModal(true)}>
             <IonIcon icon={addOutline} />
           </IonFabButton>
         </IonFab>
-        
-        {/* Create Item Modal */}
+      
         <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
           <IonHeader>
             <IonToolbar color="primary">
@@ -453,12 +690,31 @@ const ItemList = () => {
             <IonButton 
               expand="block" 
               onClick={handleCreateItem}
-              style={{ marginTop: '20px' }}
+              className="create-item-modal"
             >
               Create Item
             </IonButton>
           </IonContent>
         </IonModal>
+        
+        <IonAlert
+          isOpen={showPendingAlert}
+          onDidDismiss={() => setShowPendingAlert(false)}
+          header="Pending Operations"
+          message={`You have ${pendingOps.length} operation(s) waiting to be synced to the server. ${isOnline ? 'Click "Sync Now" to sync manually.' : 'They will be automatically synced when you go online.'}`}
+          buttons={[
+            {
+              text: 'OK',
+              role: 'cancel'
+            },
+            isOnline && !isSyncing ? {
+              text: 'Sync Now',
+              handler: () => {
+                syncPendingOperations();
+              }
+            } : null
+          ].filter(Boolean) as any}
+        />
       </IonContent>
     </IonPage>
   );

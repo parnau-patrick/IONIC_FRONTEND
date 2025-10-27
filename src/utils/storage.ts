@@ -1,6 +1,5 @@
 import { User, Item } from '../types';
 
-// Token management
 export const getToken = (): string | null => {
   return localStorage.getItem('token');
 };
@@ -13,7 +12,6 @@ export const removeToken = (): void => {
   localStorage.removeItem('token');
 };
 
-// User management
 export const getUser = (): User | null => {
   const user = localStorage.getItem('user');
   return user ? JSON.parse(user) : null;
@@ -27,7 +25,6 @@ export const removeUser = (): void => {
   localStorage.removeItem('user');
 };
 
-// Items management (pentru offline support)
 export const getItems = (): Item[] => {
   const items = localStorage.getItem('items');
   return items ? JSON.parse(items) : [];
@@ -41,14 +38,46 @@ export const removeItems = (): void => {
   localStorage.removeItem('items');
 };
 
-// Logout - curăță tot
+
+export interface PendingOperation {
+  id: string; 
+  type: 'create' | 'update' | 'delete';
+  item: Partial<Item>;
+  timestamp: number;
+}
+
+export const getPendingOperations = (): PendingOperation[] => {
+  const pending = localStorage.getItem('pendingOperations');
+  return pending ? JSON.parse(pending) : [];
+};
+
+export const setPendingOperations = (operations: PendingOperation[]): void => {
+  localStorage.setItem('pendingOperations', JSON.stringify(operations));
+};
+
+export const addPendingOperation = (operation: PendingOperation): void => {
+  const operations = getPendingOperations();
+  operations.push(operation);
+  setPendingOperations(operations);
+};
+
+export const removePendingOperation = (id: string): void => {
+  const operations = getPendingOperations();
+  const filtered = operations.filter(op => op.id !== id);
+  setPendingOperations(filtered);
+};
+
+export const clearPendingOperations = (): void => {
+  localStorage.removeItem('pendingOperations');
+};
+
 export const clearStorage = (): void => {
   removeToken();
   removeUser();
   removeItems();
+  clearPendingOperations();
 };
 
-// Check dacă user-ul e autentificat
 export const isAuthenticated = (): boolean => {
   return !!getToken();
 };

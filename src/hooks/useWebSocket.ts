@@ -5,29 +5,28 @@ import { getToken } from '../utils/storage';
 interface UseWebSocketReturn {
   isConnected: boolean;
   ws: WebSocket | null;
+  connectionId: string | null;
 }
 
-// Hook pentru WebSocket connection
 export const useWebSocket = (
   url: string, 
   onMessage?: (data: WebSocketMessage) => void
 ): UseWebSocketReturn => {
   const wsRef = useRef<WebSocket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
+  const [connectionId, setConnectionId] = useState<string | null>(null); 
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
 
-    // Creează conexiune WebSocket
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('✅ WebSocket connected');
+      console.log('WebSocket connected');
       setIsConnected(true);
       
-      // Autentifică conexiunea
       const authMessage: WebSocketAuthMessage = {
         type: 'auth',
         token: token
@@ -40,7 +39,11 @@ export const useWebSocket = (
         const data: WebSocketMessage = JSON.parse(event.data);
         
         if (data.event === 'authenticated') {
-          console.log('✅ WebSocket authenticated');
+          console.log('WebSocket authenticated');
+          if (data.payload.connectionId) {
+            setConnectionId(data.payload.connectionId);
+            console.log('Connection ID:', data.payload.connectionId);
+          }
         } else if (onMessage) {
           onMessage(data);
         }
@@ -50,15 +53,15 @@ export const useWebSocket = (
     };
 
     ws.onerror = (error: Event) => {
-      console.error('❌ WebSocket error:', error);
+      console.error('WebSocket error:', error);
     };
 
     ws.onclose = () => {
-      console.log('❌ WebSocket disconnected');
+      console.log('WebSocket disconnected');
       setIsConnected(false);
+      setConnectionId(null); 
     };
 
-    // Cleanup la unmount
     return () => {
       if (ws.readyState === WebSocket.OPEN) {
         ws.close();
@@ -66,7 +69,7 @@ export const useWebSocket = (
     };
   }, [url, onMessage]);
 
-  return { isConnected, ws: wsRef.current };
+  return { isConnected, ws: wsRef.current, connectionId };
 };
 
 export default useWebSocket;

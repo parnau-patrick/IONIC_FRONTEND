@@ -6,7 +6,7 @@ import {
   setToken, 
   removeToken, 
   getUser, 
-  setUser as saveUser,  // ← REDENUMIT pentru a evita conflictul
+  setUser as saveUser,  
   clearStorage 
 } from '../utils/storage';
 
@@ -29,7 +29,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    // Check dacă user-ul e deja autentificat
     const token = getToken();
     const savedUser = getUser();
     
@@ -40,7 +39,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     setLoading(false);
   }, []);
 
-  // Register
   const register = async (username: string, email: string, password: string): Promise<AuthResult> => {
     try {
       const response = await api.post('/api/auth/register', {
@@ -51,11 +49,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       const { token, user } = response.data;
       
-      // Salvează în localStorage
       setToken(token);
-      saveUser(user);  // ← SCHIMBAT de la setUser
-      
-      // Actualizează state
+      saveUser(user); 
       setUserState(user);
       
       return { success: true, user };
@@ -65,7 +60,6 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  // Login
   const login = async (username: string, password: string): Promise<AuthResult> => {
     try {
       const response = await api.post('/api/auth/login', {
@@ -75,11 +69,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       
       const { token, user } = response.data;
       
-      // Salvează în localStorage
       setToken(token);
-      saveUser(user);  // ← SCHIMBAT de la setUser
+      saveUser(user);
       
-      // Actualizează state
       setUserState(user);
       
       return { success: true, user };
@@ -89,19 +81,17 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     }
   };
 
-  // Logout
   const logout = (): void => {
     clearStorage();
     setUserState(null);
   };
 
-  // Get current user (refresh user data)
   const getCurrentUser = async (): Promise<AuthResult> => {
     try {
       const response = await api.get('/api/auth/me');
       const userData = response.data.user;
       
-      saveUser(userData);  // ← SCHIMBAT de la setUser
+      saveUser(userData);  
       setUserState(userData);
       
       return { success: true, user: userData };
