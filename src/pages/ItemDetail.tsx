@@ -1,143 +1,282 @@
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
+import { useParams, useHistory } from 'react-router-dom';
 import {
-  IonBackButton,
-  IonButton,
-  IonButtons,
-  IonContent,
-  IonHeader,
-  IonIcon,
   IonPage,
-  IonTitle,
+  IonHeader,
   IonToolbar,
+  IonTitle,
+  IonContent,
   IonCard,
   IonCardHeader,
   IonCardTitle,
   IonCardContent,
   IonItem,
   IonLabel,
-  IonBadge,
-  IonLoading,
-  IonAlert,
+  IonInput,
+  IonTextarea,
+  IonButton,
+  IonButtons,
+  IonBackButton,
+  IonCheckbox,
+  IonText,
+  IonSpinner,
+  IonIcon,
+  IonBadge
 } from '@ionic/react';
-import { create, trash, checkmarkCircle, closeCircle } from 'ionicons/icons';
-import { useHistory, useParams } from 'react-router-dom';
-import { itemApi } from '../api/itemApi';
-import { Item } from '../types/Item';
+import { trashOutline, createOutline, saveOutline, closeOutline } from 'ionicons/icons';
+import api from '../config/api';
+import { Item } from '../types';
 
-const ItemDetail: React.FC = () => {
+const ItemDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const [item, setItem] = useState<Item | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showDeleteAlert, setShowDeleteAlert] = useState(false);
   const history = useHistory();
+  
+  const [item, setItem] = useState<Item | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string>('');
+  const [isEditing, setIsEditing] = useState<boolean>(false);
+  const [editText, setEditText] = useState<string>('');
 
+  // Fetch item
   useEffect(() => {
-    loadItem();
+    const fetchItem = async () => {
+      try {
+        setLoading(true);
+        const response = await api.get<Item>(`/api/items/${id}`);
+        setItem(response.data);
+        setEditText(response.data.text);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error fetching item:', err);
+        setError('Failed to load item');
+        setLoading(false);
+      }
+    };
+
+    fetchItem();
   }, [id]);
 
-  const loadItem = async () => {
-    try {
-      setLoading(true);
-      const data = await itemApi.getItemById(parseInt(id));
-      setItem(data);
-    } catch (error) {
-      console.error('Error loading item:', error);
-      history.push('/items');
-    } finally {
-      setLoading(false);
+  // Update item
+  const handleUpdate = async (): Promise<void> => {
+    if (!editText.trim() || editText.length < 3) {
+      alert('Item text must be at least 3 characters');
+      return;
     }
-  };
 
-  const handleDelete = async () => {
-    if (item) {
-      try {
-        await itemApi.deleteItem(item.id);
-        history.push('/items');
-      } catch (error) {
-        console.error('Error deleting item:', error);
+    if (!item) return;
+
+    try {
+      const response = await api.put<Item>(`/api/items/${id}`, {
+        text: editText,
+        completed: item.completed,
+        version: item.version
+      });
+      
+      setItem(response.data);
+      setIsEditing(false);
+    } catch (err: any) {
+      console.error('Error updating item:', err);
+      
+      if (err.response?.status === 409) {
+        alert('Version conflict! Item was modified. Refreshing...');
+        window.location.reload();
+      } else {
+        alert('Failed to update item');
       }
     }
   };
 
+  // Toggle completed
+  const handleToggleCompleted = async (): Promise<void> => {
+    if (!item) return;
+
+    try {
+      const response = await api.put<Item>(`/api/items/${id}`, {
+        text: item.text,
+        completed: !item.completed,
+        version: item.version
+      });
+      
+      setItem(response.data);
+    } catch (err: any) {
+      console.error('Error updating item:', err);
+      
+      if (err.response?.status === 409) {
+        alert('Version conflict! Item was modified. Refreshing...');
+        window.location.reload();
+      } else {
+        alert('Failed to update item');
+      }
+    }
+  };
+
+  // Delete item
+  const handleDelete = async (): Promise<void> => {
+    if (!confirm('Are you sure you want to delete this item?')) {
+      return;
+    }
+
+    try {
+      await api.delete(`/api/items/${id}`);
+      history.push('/items');
+    } catch (err) {
+      console.error('Error deleting item:', err);
+      alert('Failed to delete item');
+    }
+  };
+
+  if (loading) {
+    return (
+      <IonPage>
+        <IonHeader>
+          <IonToolbar color="primary">
+            <IonButtons slot="start">
+              <IonBackButton defaultHref="/items" />
+            </IonButtons>
+            <IonTitle>Item Details</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent>
+          <div style={{ textAlign: 'center', marginTop: '50px' }}>
+            <IonSpinner name="crescent" />
+            <p>Loading item...</p>
+          </div>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
+  if (error || !item) {
+    return (
+      <IonPage>
+        <IonHeader>
+          <IonToolbar color="primary">
+            <IonButtons slot="start">
+              <IonBackButton defaultHref="/items" />
+            </IonButtons>
+            <IonTitle>Item Details</IonTitle>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent className="ion-padding">
+          <IonText color="danger">
+            <p style={{ textAlign: 'center', marginTop: '50px' }}>
+              {error || 'Item not found'}
+            </p>
+          </IonText>
+        </IonContent>
+      </IonPage>
+    );
+  }
+
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar>
+        <IonToolbar color="primary">
           <IonButtons slot="start">
             <IonBackButton defaultHref="/items" />
           </IonButtons>
           <IonTitle>Item Details</IonTitle>
           <IonButtons slot="end">
-            <IonButton onClick={() => history.push(`/item/edit/${id}`)}>
-              <IonIcon icon={create} />
-            </IonButton>
-            <IonButton color="danger" onClick={() => setShowDeleteAlert(true)}>
-              <IonIcon icon={trash} />
-            </IonButton>
+            {isEditing ? (
+              <>
+                <IonButton onClick={handleUpdate}>
+                  <IonIcon icon={saveOutline} />
+                </IonButton>
+                <IonButton onClick={() => {
+                  setIsEditing(false);
+                  setEditText(item.text);
+                }}>
+                  <IonIcon icon={closeOutline} />
+                </IonButton>
+              </>
+            ) : (
+              <>
+                <IonButton onClick={() => setIsEditing(true)}>
+                  <IonIcon icon={createOutline} />
+                </IonButton>
+                <IonButton onClick={handleDelete} color="danger">
+                  <IonIcon icon={trashOutline} />
+                </IonButton>
+              </>
+            )}
           </IonButtons>
         </IonToolbar>
       </IonHeader>
-
-      <IonContent fullscreen>
-        <IonLoading isOpen={loading} message="Loading item..." />
-
-        {item && (
-          <IonCard>
-            <IonCardHeader>
-              <IonCardTitle>{item.text}</IonCardTitle>
-            </IonCardHeader>
-            <IonCardContent>
-              <IonItem>
-                <IonLabel>
-                  <h3>ID</h3>
-                  <p>{item.id}</p>
-                </IonLabel>
-              </IonItem>
-
-              <IonItem>
-                <IonLabel>
-                  <h3>Status</h3>
-                </IonLabel>
-                <IonBadge slot="end" color={item.completed ? 'success' : 'warning'}>
-                  <IonIcon icon={item.completed ? checkmarkCircle : closeCircle} />
-                  {item.completed ? ' Completed' : ' Incomplete'}
-                </IonBadge>
-              </IonItem>
-
-              <IonItem>
-                <IonLabel>
-                  <h3>Version</h3>
-                  <p>{item.version}</p>
-                </IonLabel>
-              </IonItem>
-
-              <IonItem>
-                <IonLabel>
-                  <h3>Date Created</h3>
-                  <p>{new Date(item.date).toLocaleString()}</p>
-                </IonLabel>
-              </IonItem>
-            </IonCardContent>
-          </IonCard>
-        )}
-
-        <IonAlert
-          isOpen={showDeleteAlert}
-          onDidDismiss={() => setShowDeleteAlert(false)}
-          header="Delete Item"
-          message="Are you sure you want to delete this item?"
-          buttons={[
-            {
-              text: 'Cancel',
-              role: 'cancel',
-            },
-            {
-              text: 'Delete',
-              role: 'destructive',
-              handler: handleDelete,
-            },
-          ]}
-        />
+      
+      <IonContent className="ion-padding">
+        <IonCard>
+          <IonCardHeader>
+            <IonCardTitle>
+              {item.completed ? '✅' : '⏳'} {isEditing ? 'Edit Item' : 'Item Information'}
+            </IonCardTitle>
+          </IonCardHeader>
+          
+          <IonCardContent>
+            {isEditing ? (
+              <>
+                <IonItem>
+                  <IonLabel position="stacked">Item Text</IonLabel>
+                  <IonTextarea
+                    value={editText}
+                    onIonChange={(e) => setEditText(e.detail.value!)}
+                    rows={3}
+                    minlength={3}
+                    maxlength={200}
+                    autoGrow
+                  />
+                </IonItem>
+              </>
+            ) : (
+              <>
+                <IonItem lines="none">
+                  <IonCheckbox
+                    checked={item.completed}
+                    onIonChange={handleToggleCompleted}
+                    slot="start"
+                  />
+                  <IonLabel>
+                    <h2>Status</h2>
+                    <p>{item.completed ? '✅ Completed' : '⏳ Incomplete'}</p>
+                  </IonLabel>
+                </IonItem>
+                
+                <IonItem>
+                  <IonLabel>
+                    <h2>Text</h2>
+                    <p style={{ 
+                      whiteSpace: 'pre-wrap',
+                      textDecoration: item.completed ? 'line-through' : 'none',
+                      color: item.completed ? 'var(--ion-color-medium)' : 'inherit'
+                    }}>
+                      {item.text}
+                    </p>
+                  </IonLabel>
+                </IonItem>
+                
+                <IonItem>
+                  <IonLabel>
+                    <h2>Version</h2>
+                    <p><IonBadge color="primary">v{item.version}</IonBadge></p>
+                  </IonLabel>
+                </IonItem>
+                
+                <IonItem>
+                  <IonLabel>
+                    <h2>Created</h2>
+                    <p>{new Date(item.createdAt).toLocaleString()}</p>
+                  </IonLabel>
+                </IonItem>
+                
+                <IonItem>
+                  <IonLabel>
+                    <h2>Last Updated</h2>
+                    <p>{new Date(item.updatedAt).toLocaleString()}</p>
+                  </IonLabel>
+                </IonItem>
+              </>
+            )}
+          </IonCardContent>
+        </IonCard>
       </IonContent>
     </IonPage>
   );

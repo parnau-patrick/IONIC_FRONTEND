@@ -1,90 +1,72 @@
-import { useEffect, useState, useRef } from 'react';
-import { Item } from '../types/Item';
+import { useEffect, useRef, useState } from 'react';
+import { WebSocketMessage, WebSocketAuthMessage } from '../types';
+import { getToken } from '../utils/storage';
 
-interface WebSocketMessage {
-  event: 'created' | 'updated' | 'deleted';
-  payload: {
-    item: Item;
-  };
+interface UseWebSocketReturn {
+  isConnected: boolean;
+  ws: WebSocket | null;
 }
 
-let globalConnectionId = 0;
-
-export const useWebSocket = (onMessage: (message: WebSocketMessage) => void) => {
-  const [ws, setWs] = useState<WebSocket | null>(null);
-  const [isConnected, setIsConnected] = useState(false);
-  const clientIdRef = useRef<number>(0);
-  const onMessageRef = useRef(onMessage);
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // Update ref când onMessage se schimbă
-  useEffect(() => {
-    onMessageRef.current = onMessage;
-  }, [onMessage]);
+// Hook pentru WebSocket connection
+export const useWebSocket = (
+  url: string, 
+  onMessage?: (data: WebSocketMessage) => void
+): UseWebSocketReturn => {
+  const wsRef = useRef<WebSocket | null>(null);
+  const [isConnected, setIsConnected] = useState<boolean>(false);
 
   useEffect(() => {
-    globalConnectionId++;
-    clientIdRef.current = globalConnectionId;
-    console.log(`🔌 [Client #${clientIdRef.current}] Mounting WebSocket hook`);
-    
-    let websocket: WebSocket | null = null;
+    const token = getToken();
+    if (!token) return;
 
-    const connect = () => {
-      if (websocket && websocket.readyState === WebSocket.OPEN) {
-        console.log(`⚠️ [Client #${clientIdRef.current}] WebSocket already connected, skipping`);
-        return;
-      }
+    // Creează conexiune WebSocket
+    const ws = new WebSocket(url);
+    wsRef.current = ws;
 
-      console.log(`🔌 [Client #${clientIdRef.current}] Connecting to WebSocket...`);
-      websocket = new WebSocket('ws://localhost:3000');
-
-      websocket.onopen = () => {
-        console.log(`✅ [Client #${clientIdRef.current}] Connected`);
-        setIsConnected(true);
-        setWs(websocket);
+    ws.onopen = () => {
+      console.log('✅ WebSocket connected');
+      setIsConnected(true);
+      
+      // Autentifică conexiunea
+      const authMessage: WebSocketAuthMessage = {
+        type: 'auth',
+        token: token
       };
+      ws.send(JSON.stringify(authMessage));
+    };
 
-      websocket.onmessage = (event) => {
-        const message: WebSocketMessage = JSON.parse(event.data);
-        console.log(`📩 [Client #${clientIdRef.current}] Message:`, message.event);
-        onMessageRef.current(message);
-      };
-
-      websocket.onerror = (error) => {
-        console.error(`❌ [Client #${clientIdRef.current}] Error:`, error);
-      };
-
-      websocket.onclose = (event) => {
-        console.log(`🔴 [Client #${clientIdRef.current}] Disconnected (code: ${event.code})`);
-        setIsConnected(false);
-        setWs(null);
+    ws.onmessage = (event: MessageEvent) => {
+      try {
+        const data: WebSocketMessage = JSON.parse(event.data);
         
-        // Doar reconnect dacă nu e un close normal
-        if (event.code !== 1000) {
-          console.log(`🔄 [Client #${clientIdRef.current}] Reconnecting in 3s...`);
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connect();
-          }, 3000);
+        if (data.event === 'authenticated') {
+          console.log('✅ WebSocket authenticated');
+        } else if (onMessage) {
+          onMessage(data);
         }
-      };
+      } catch (error) {
+        console.error('WebSocket message error:', error);
+      }
     };
 
-    connect();
+    ws.onerror = (error: Event) => {
+      console.error('❌ WebSocket error:', error);
+    };
 
-    // Cleanup
+    ws.onclose = () => {
+      console.log('❌ WebSocket disconnected');
+      setIsConnected(false);
+    };
+
+    // Cleanup la unmount
     return () => {
-      console.log(`🧹 [Client #${clientIdRef.current}] Cleaning up`);
-      
-      if (reconnectTimeoutRef.current) {
-        clearTimeout(reconnectTimeoutRef.current);
-      }
-      
-      if (websocket) {
-        websocket.onclose = null; // Prevent reconnect
-        websocket.close(1000, 'Component unmounted');
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.close();
       }
     };
-  }, []); // ← EMPTY DEPENDENCY ARRAY!
+  }, [url, onMessage]);
 
-  return { ws, isConnected };
+  return { isConnected, ws: wsRef.current };
 };
+
+export default useWebSocket;

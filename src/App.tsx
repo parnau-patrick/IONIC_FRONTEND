@@ -1,43 +1,64 @@
 import { Redirect, Route } from 'react-router-dom';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
-import ItemList from './pages/ItemList';
-import ItemDetail from './pages/ItemDetail';
-import ItemForm from './pages/ItemForm';
 
+/* Core CSS required for Ionic components to work properly */
 import '@ionic/react/css/core.css';
+
+/* Basic CSS for apps built with Ionic */
 import '@ionic/react/css/normalize.css';
 import '@ionic/react/css/structure.css';
 import '@ionic/react/css/typography.css';
+
+/* Optional CSS utils that can be commented out */
 import '@ionic/react/css/padding.css';
 import '@ionic/react/css/float-elements.css';
 import '@ionic/react/css/text-alignment.css';
 import '@ionic/react/css/text-transformation.css';
 import '@ionic/react/css/flex-utils.css';
 import '@ionic/react/css/display.css';
-import '@ionic/react/css/palettes/dark.system.css';
+
+/* Theme variables */
 import './theme/variables.css';
+
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './components/ProtectedRoute';
+import Login from './pages/Login';
+import Register from './pages/Register';
+import ItemList from './pages/ItemList';
+import ItemDetail from './pages/ItemDetail';
 
 setupIonicReact();
 
 const App: React.FC = () => (
   <IonApp>
-    <IonReactRouter>
-      <IonRouterOutlet>
-        <Route exact path="/items">
-          <ItemList />
-        </Route>
-        <Route exact path="/item/:id">
-          <ItemDetail />
-        </Route>
-        <Route exact path="/item/edit/:id">
-          <ItemForm />
-        </Route>
-        <Route exact path="/">
-          <Redirect to="/items" />
-        </Route>
-      </IonRouterOutlet>
-    </IonReactRouter>
+    <AuthProvider>
+      <IonReactRouter>
+        <IonRouterOutlet>
+          {/* Public routes */}
+          <Route exact path="/login" component={Login} />
+          <Route exact path="/register" component={Register} />
+          
+          {/* Protected routes */}
+          <Route exact path="/items/:id">
+            <ProtectedRoute>
+              <ItemDetail />
+            </ProtectedRoute>
+          </Route>
+          
+          <Route exact path="/items">
+            <ProtectedRoute>
+              <ItemList />
+            </ProtectedRoute>
+          </Route>
+          
+          {/* Default redirect */}
+          <Route exact path="/">
+            <Redirect to="/items" />
+          </Route>
+        </IonRouterOutlet>
+      </IonReactRouter>
+    </AuthProvider>
   </IonApp>
 );
 
