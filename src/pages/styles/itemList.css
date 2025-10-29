@@ -1,3 +1,48 @@
+* Stats Card */
+.stats-card {
+  margin: 10px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 15px;
+  text-align: center;
+}
+
+.stats-grid > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 10px;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+}
+
+.stats-grid > div:hover {
+  background-color: var(--ion-color-light);
+}
+
+.stats-grid ion-badge {
+  font-size: 18px;
+  padding: 8px 12px;
+  min-width: 40px;
+}
+
+.stats-grid ion-label {
+  font-size: 12px;
+  color: var(--ion-color-medium);
+}
+
+
+@media (max-width: 768px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 
 .pending-banner {
   padding: 12px 15px;
@@ -10,58 +55,25 @@
   gap: 10px;
 }
 
-.pending-banner-content {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1;
+
+.completed {
+  text-decoration: line-through;
+  color: var(--ion-color-medium);
 }
 
-.pending-banner-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.pending-syncing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.pending-syncing-text {
-  font-size: 13px;
-  color: #856404;
-}
-
-.pending-offline-text {
-  font-size: 12px;
-  color: #856404;
-}
-
-.loading-container {
-  text-align: center;
-  margin-top: 50px;
-}
-
-.error-container {
-  text-align: center;
-  margin-top: 50px;
-}
-
+.loading-container,
+.error-container,
 .empty-state {
   text-align: center;
   margin-top: 50px;
+  padding: 20px;
 }
 
-.item-text {
-  text-decoration: none;
-  color: inherit;
-}
 
-.item-text.completed {
-  text-decoration: line-through;
-  color: var(--ion-color-medium);
+ion-badge ion-icon {
+  font-size: 14px;
+  vertical-align: middle;
+  margin-right: 4px;
 }
 
 .pagination-container {
@@ -69,31 +81,5 @@
   justify-content: space-between;
   align-items: center;
   padding: 20px;
-}
-
-.create-item-modal {
-  margin-top: 20px;
-}
-
-.header-chip-spinner {
-  width: 16px;
-  height: 16px;
-}
-
-.center-card-container {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 80vh;
-}
-
-.center-card {
-  width: 100%;
-  max-width: 500px;
-}
-
-.register-link {
-  text-align: center;
-  display: block;
-  margin-top: 20px;
+  border-top: 1px solid var(--ion-color-light);
 }

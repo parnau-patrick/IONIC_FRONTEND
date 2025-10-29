@@ -17,6 +17,7 @@ export interface Item {
   userId: number;
   createdAt: string;
   updatedAt: string;
+  dueDate?: string | null;  
 }
 
 export interface ItemsResponse {
@@ -30,12 +31,40 @@ export interface ItemsResponse {
 export interface CreateItemData {
   text: string;
   completed: boolean;
+  dueDate?: string | null;  
 }
 
 export interface UpdateItemData {
   text: string;
   completed: boolean;
   version: number;
+  dueDate?: string | null;  
+}
+
+export type DateFilterType = 
+  | 'all'
+  | 'today'
+  | 'tomorrow'
+  | 'this-week'
+  | 'this-month'
+  | 'next-month'
+  | 'overdue'
+  | 'no-date'
+  | 'has-date'
+  | 'custom';
+
+export interface DateFilterOptions {
+  dateFilter: DateFilterType;
+  customStart?: string;
+  customEnd?: string;
+}
+
+export interface DateStatistics {
+  overdue: number;
+  today: number;
+  thisWeek: number;
+  noDate: number;
+  total: number;
 }
 
 export interface WebSocketMessage {
@@ -80,3 +109,7 @@ export interface RegisterFormData {
   password: string;
   confirmPassword: string;
 }
+
+
+
+
