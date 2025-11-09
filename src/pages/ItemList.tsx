@@ -5,26 +5,27 @@ import {
   IonSearchbar, IonSegment, IonSegmentButton, IonLabel, IonList, IonItem,
   IonCheckbox, IonButton, IonButtons, IonIcon, IonFab, IonFabButton,
   IonModal, IonInput, IonText, IonSpinner, IonChip, IonBadge,
-  IonRefresher, IonRefresherContent, IonAlert, IonDatetime,
-  IonCard, IonCardContent, IonCardHeader, IonCardTitle
+  IonRefresher, IonRefresherContent, IonDatetime,
+  IonCard, IonCardContent, IonCardHeader, IonCardTitle,
+  IonInfiniteScroll, IonInfiniteScrollContent
 } from '@ionic/react';
 
-import { 
+import {
   addOutline, logOutOutline, trashOutline, wifiOutline,
-  cloudOfflineOutline, warningOutline, cloudUploadOutline,
-  calendarOutline, filterOutline, statsChartOutline
+  cloudOfflineOutline, warningOutline, calendarOutline,
+  filterOutline, statsChartOutline
 } from 'ionicons/icons';
 
 import { useAuth } from '../context/AuthContext';
 import { useWebSocket } from '../hooks/useWebSocket';
 import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import api, { setConnectionId } from '../config/api';
-import { 
-  Item, ItemsResponse, WebSocketMessage, 
-  DateFilterType, DateStatistics 
+import {
+  Item, ItemsResponse, WebSocketMessage,
+  DateFilterType, DateStatistics
 } from '../types';
 import "./styles/itemList.css";
-import { 
+import {
   getItems as getLocalItems, setItems as setLocalItems,
   getPendingOperations, addPendingOperation,
   removePendingOperation, PendingOperation
@@ -34,7 +35,7 @@ const ItemList = () => {
   const history = useHistory();
   const { user, logout } = useAuth();
   const isOnline = useNetworkStatus();
-  
+
   const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
@@ -42,29 +43,28 @@ const ItemList = () => {
   const [totalPages, setTotalPages] = useState<number>(1);
   const [total, setTotal] = useState<number>(0);
   const limit = 10;
-  
+
   const [searchText, setSearchText] = useState<string>('');
   const [filterCompleted, setFilterCompleted] = useState<string>('all');
-  
+
   const [dateFilter, setDateFilter] = useState<DateFilterType>('all');
   const [customStartDate, setCustomStartDate] = useState<string>('');
   const [customEndDate, setCustomEndDate] = useState<string>('');
   const [showDateFilterModal, setShowDateFilterModal] = useState<boolean>(false);
   const [dateStats, setDateStats] = useState<DateStatistics | null>(null);
-  
+
   const [showModal, setShowModal] = useState<boolean>(false);
   const [newItemText, setNewItemText] = useState<string>('');
   const [newItemDueDate, setNewItemDueDate] = useState<string>('');
-  
+
   const [pendingOps, setPendingOps] = useState<PendingOperation[]>([]);
-  const [showPendingAlert, setShowPendingAlert] = useState<boolean>(false);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
 
   const formatDate = (dateString: string | null | undefined): string => {
     if (!dateString) return '';
     const date = new Date(dateString);
-    return date.toLocaleDateString('ro-RO', { 
-      year: 'numeric', month: 'short', day: 'numeric' 
+    return date.toLocaleDateString('ro-RO', {
+      year: 'numeric', month: 'short', day: 'numeric'
     });
   };
 
@@ -76,14 +76,13 @@ const ItemList = () => {
   const getDateBadgeColor = (dueDate: string | null | undefined, completed: boolean): string => {
     if (!dueDate) return 'medium';
     if (completed) return 'success';
-    
+
     const due = new Date(dueDate);
     const now = new Date();
     const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays < 0) return 'danger';
-    if (diffDays === 0) return 'warning';
-    if (diffDays === 1) return 'warning';
+    if (diffDays <= 1) return 'warning';
     if (diffDays <= 7) return 'primary';
     return 'medium';
   };
@@ -103,7 +102,7 @@ const ItemList = () => {
     setPendingOps(operations);
   }, []);
 
-  const fetchItems = useCallback(async () => {
+  const fetchItems = useCallback(async (reset = true) => {
     if (!isOnline) {
       const localItems = getLocalItems();
       setItems(localItems);
@@ -112,14 +111,14 @@ const ItemList = () => {
     }
 
     try {
-      setLoading(true);
+      if (reset) setLoading(true);
       setError('');
-      
+
       const params = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString()
       });
-      
+
       if (searchText) params.append('text', searchText);
       if (filterCompleted !== 'all') params.append('completed', filterCompleted);
       if (dateFilter !== 'all') {
@@ -129,13 +128,19 @@ const ItemList = () => {
           if (customEndDate) params.append('customEnd', customEndDate);
         }
       }
-      
+
       const response = await api.get<ItemsResponse>(`/api/items?${params.toString()}`);
       const data = response.data;
-      
-      setItems(data.items);
+
       setTotalPages(data.totalPages);
       setTotal(data.total);
+
+      if (reset) {
+        setItems(data.items);
+      } else {
+        setItems(prev => [...prev, ...data.items]);
+      }
+
       setLocalItems(data.items);
       setLoading(false);
       await fetchDateStatistics();
@@ -149,7 +154,7 @@ const ItemList = () => {
   }, [page, searchText, filterCompleted, dateFilter, customStartDate, customEndDate, isOnline]);
 
   useEffect(() => {
-    fetchItems();
+    fetchItems(true);
   }, [fetchItems]);
 
   useEffect(() => {
@@ -161,11 +166,11 @@ const ItemList = () => {
   const syncPendingOperations = async () => {
     if (pendingOps.length === 0) return;
     setIsSyncing(true);
-    
+
     const createOps = pendingOps.filter(op => op.type === 'create');
     const otherOps = pendingOps.filter(op => op.type !== 'create');
     const tempIdMap = new Map<number, number>();
-    
+
     for (const op of createOps) {
       try {
         const response = await api.post('/api/items', {
@@ -176,21 +181,16 @@ const ItemList = () => {
         const newItem = response.data;
         if (op.item.id) tempIdMap.set(op.item.id, newItem.id);
         removePendingOperation(op.id);
-      } catch (err: any) {
-        if (err.response?.status === 404 || err.response?.status === 400) {
-          removePendingOperation(op.id);
-        }
+      } catch {
+        removePendingOperation(op.id);
       }
     }
-  
+
     for (const op of otherOps) {
       try {
         const itemId = op.item.id;
-        if (itemId && itemId > 1000000000) {
-          removePendingOperation(op.id);
-          continue;
-        }
-        const realId = tempIdMap.get(itemId!) || itemId;
+        if (!itemId) continue;
+        const realId = tempIdMap.get(itemId) || itemId;
         if (op.type === 'update') {
           await api.put(`/api/items/${realId}`, {
             text: op.item.text,
@@ -202,17 +202,15 @@ const ItemList = () => {
           await api.delete(`/api/items/${realId}`);
         }
         removePendingOperation(op.id);
-      } catch (err: any) {
-        if (err.response?.status === 404) {
-          removePendingOperation(op.id);
-        }
+      } catch {
+        removePendingOperation(op.id);
       }
     }
-    
+
     const remaining = getPendingOperations();
     setPendingOps(remaining);
     setIsSyncing(false);
-    if (remaining.length === 0) await fetchItems();
+    if (remaining.length === 0) await fetchItems(true);
   };
 
   const handleWebSocketMessage = useCallback((data: WebSocketMessage) => {
@@ -223,7 +221,7 @@ const ItemList = () => {
       });
       setTotal(prev => prev + 1);
     } else if (data.event === 'updated' && data.payload.item) {
-      setItems(prev => prev.map(item => 
+      setItems(prev => prev.map(item =>
         item.id === data.payload.item!.id ? data.payload.item! : item
       ));
     } else if (data.event === 'deleted' && data.payload.item) {
@@ -253,12 +251,12 @@ const ItemList = () => {
     if (isOnline) {
       try {
         const response = await api.post<Item>('/api/items', newItemData);
-        setItems(prev => [response.data, ...prev].slice(0, limit));
+        setItems(prev => [response.data, ...prev]);
         setTotal(prev => prev + 1);
         setNewItemText('');
         setNewItemDueDate('');
         setShowModal(false);
-      } catch (err) {
+      } catch {
         await createItemOffline(newItemData);
       }
     } else {
@@ -277,19 +275,19 @@ const ItemList = () => {
       updatedAt: new Date().toISOString(),
       dueDate: itemData.dueDate
     };
-    
+
     const pendingOp = {
       id: `temp-${Date.now()}`,
       type: 'create' as const,
       item: tempItem,
       timestamp: Date.now()
     };
-    
+
     addPendingOperation(pendingOp);
     setPendingOps(prev => [...prev, pendingOp]);
-    
+
     setItems(prev => {
-      const updated = [tempItem, ...prev].slice(0, limit);
+      const updated = [tempItem, ...prev];
       setLocalItems(updated);
       return updated;
     });
@@ -300,8 +298,8 @@ const ItemList = () => {
 
   const handleToggleCompleted = async (item: Item, e: any): Promise<void> => {
     e.stopPropagation();
-    
-    setItems(prev => prev.map(i => 
+
+    setItems(prev => prev.map(i =>
       i.id === item.id ? { ...i, completed: !i.completed } : i
     ));
 
@@ -316,19 +314,15 @@ const ItemList = () => {
       try {
         const response = await api.put<Item>(`/api/items/${item.id}`, updatedData);
         setItems(prev => prev.map(i => i.id === response.data.id ? response.data : i));
-      } catch (err: any) {
-        if (err.response?.status === 409) {
-          fetchItems();
-        } else {
-          const pendingOp = {
-            id: `update-${item.id}-${Date.now()}`,
-            type: 'update' as const,
-            item: { ...item, ...updatedData },
-            timestamp: Date.now()
-          };
-          addPendingOperation(pendingOp);
-          setPendingOps(prev => [...prev, pendingOp]);
-        }
+      } catch {
+        const pendingOp = {
+          id: `update-${item.id}-${Date.now()}`,
+          type: 'update' as const,
+          item: { ...item, ...updatedData },
+          timestamp: Date.now()
+        };
+        addPendingOperation(pendingOp);
+        setPendingOps(prev => [...prev, pendingOp]);
       }
     } else {
       const pendingOp = {
@@ -345,24 +339,22 @@ const ItemList = () => {
   const handleDeleteItem = async (itemId: number, e: any): Promise<void> => {
     e.stopPropagation();
     if (!confirm('Are you sure?')) return;
-    
+
     setItems(prev => prev.filter(item => item.id !== itemId));
     setTotal(prev => prev - 1);
 
     if (isOnline) {
       try {
         await api.delete(`/api/items/${itemId}`);
-      } catch (err: any) {
-        if (err.response?.status !== 404) {
-          const pendingOp = {
-            id: `delete-${itemId}-${Date.now()}`,
-            type: 'delete' as const,
-            item: { id: itemId },
-            timestamp: Date.now()
-          };
-          addPendingOperation(pendingOp);
-          setPendingOps(prev => [...prev, pendingOp]);
-        }
+      } catch {
+        const pendingOp = {
+          id: `delete-${itemId}-${Date.now()}`,
+          type: 'delete' as const,
+          item: { id: itemId },
+          timestamp: Date.now()
+        };
+        addPendingOperation(pendingOp);
+        setPendingOps(prev => [...prev, pendingOp]);
       }
     } else {
       const pendingOp = {
@@ -377,9 +369,9 @@ const ItemList = () => {
   };
 
   const handleViewItem = (itemId: number) => history.push(`/items/${itemId}`);
-  
+
   const handleRefresh = async (event: any) => {
-    await fetchItems();
+    await fetchItems(true);
     if (isOnline && pendingOps.length > 0) await syncPendingOperations();
     event.detail.complete();
   };
@@ -400,6 +392,17 @@ const ItemList = () => {
     setShowDateFilterModal(false);
   };
 
+  const loadMoreItems = async (ev: CustomEvent<void>) => {
+    if (page >= totalPages) {
+      (ev.target as HTMLIonInfiniteScrollElement).disabled = true;
+      (ev.target as HTMLIonInfiniteScrollElement).complete();
+      return;
+    }
+    setPage(prev => prev + 1);
+    await fetchItems(false);
+    (ev.target as HTMLIonInfiniteScrollElement).complete();
+  };
+
   return (
     <IonPage>
       <IonHeader>
@@ -412,7 +415,7 @@ const ItemList = () => {
             </IonChip>
             {isConnected && <IonChip color="success"><IonLabel>WS</IonLabel></IonChip>}
             {pendingOps.length > 0 && (
-              <IonChip color="warning" onClick={() => setShowPendingAlert(true)}>
+              <IonChip color="warning">
                 <IonIcon icon={warningOutline} />
                 <IonLabel>{pendingOps.length}</IonLabel>
               </IonChip>
@@ -420,7 +423,7 @@ const ItemList = () => {
             <IonButton onClick={logout}><IonIcon icon={logOutOutline} /></IonButton>
           </IonButtons>
         </IonToolbar>
-        
+
         <IonToolbar>
           <IonSearchbar
             value={searchText}
@@ -429,7 +432,7 @@ const ItemList = () => {
             debounce={500}
           />
         </IonToolbar>
-        
+
         <IonToolbar>
           <IonSegment value={filterCompleted} onIonChange={(e) => {
             setFilterCompleted(e.detail.value as string || 'all');
@@ -457,53 +460,12 @@ const ItemList = () => {
           </IonButtons>
         </IonToolbar>
       </IonHeader>
-      
+
       <IonContent>
         <IonRefresher slot="fixed" onIonRefresh={handleRefresh}>
           <IonRefresherContent />
         </IonRefresher>
-        
-        {pendingOps.length > 0 && (
-          <div className="pending-banner">
-            <IonText color="warning">
-              <strong>{pendingOps.length} pending operation(s)</strong>
-            </IonText>
-            {isOnline && !isSyncing && (
-              <IonButton size="small" color="warning" onClick={syncPendingOperations}>
-                Sync Now
-              </IonButton>
-            )}
-          </div>
-        )}
 
-        {dateStats && dateFilter === 'all' && (
-          <IonCard>
-            <IonCardHeader>
-              <IonCardTitle><IonIcon icon={statsChartOutline} /> Quick Stats</IonCardTitle>
-            </IonCardHeader>
-            <IonCardContent>
-              <div className="stats-grid">
-                <div onClick={() => handleDateFilterChange('overdue')}>
-                  <IonBadge color="danger">{dateStats.overdue}</IonBadge>
-                  <IonLabel>Overdue</IonLabel>
-                </div>
-                <div onClick={() => handleDateFilterChange('today')}>
-                  <IonBadge color="warning">{dateStats.today}</IonBadge>
-                  <IonLabel>Today</IonLabel>
-                </div>
-                <div onClick={() => handleDateFilterChange('this-week')}>
-                  <IonBadge color="primary">{dateStats.thisWeek}</IonBadge>
-                  <IonLabel>This Week</IonLabel>
-                </div>
-                <div onClick={() => handleDateFilterChange('no-date')}>
-                  <IonBadge color="medium">{dateStats.noDate}</IonBadge>
-                  <IonLabel>No Date</IonLabel>
-                </div>
-              </div>
-            </IonCardContent>
-          </IonCard>
-        )}
-        
         {loading ? (
           <div className="loading-container">
             <IonSpinner />
@@ -514,163 +476,136 @@ const ItemList = () => {
             <IonText color="medium"><p>No items found.</p></IonText>
           </div>
         ) : (
-          <IonList>
-            {items.map(item => (
-              <IonItem key={item.id} button onClick={() => handleViewItem(item.id)}>
-                <IonCheckbox
-                  slot="start"
-                  checked={item.completed}
-                  onIonChange={(e) => handleToggleCompleted(item, e)}
-                />
-                <IonLabel>
-                  <h2 className={item.completed ? 'completed' : ''}>{item.text}</h2>
-                  <p>
-                    <IonBadge color="light">v{item.version}</IonBadge>
-                    {' • '}
-                    {new Date(item.createdAt).toLocaleDateString()}
-                    {item.dueDate && (
-                      <>
-                        {' • '}
-                        <IonBadge color={getDateBadgeColor(item.dueDate, item.completed)}>
-                          <IonIcon icon={calendarOutline} />
-                          {formatDate(item.dueDate)}
-                          {isOverdue(item.dueDate, item.completed) && ' (OVERDUE)'}
-                        </IonBadge>
-                      </>
-                    )}
-                  </p>
-                </IonLabel>
-                <IonButtons slot="end">
-                  <IonButton onClick={(e) => handleDeleteItem(item.id, e)} color="danger">
+          <>
+            <IonList>
+              {items.map(item => (
+                <IonItem key={item.id} button onClick={() => handleViewItem(item.id)}>
+                  <IonCheckbox
+                    slot="start"
+                    checked={item.completed}
+                    onIonChange={(e) => handleToggleCompleted(item, e)}
+                  />
+                  <IonLabel>
+                    <h2 className={item.completed ? 'completed' : ''}>{item.text}</h2>
+                    <p>
+                      <IonBadge color="light">v{item.version}</IonBadge>
+                      {' • '}
+                      {new Date(item.createdAt).toLocaleDateString()}
+                      {item.dueDate && (
+                        <>
+                          {' • '}
+                          <IonBadge color={getDateBadgeColor(item.dueDate, item.completed)}>
+                            <IonIcon icon={calendarOutline} /> {formatDate(item.dueDate)}
+                          </IonBadge>
+                        </>
+                      )}
+                    </p>
+                  </IonLabel>
+                  {isOverdue(item.dueDate, item.completed) && (
+                    <IonBadge color="danger" slot="end">Overdue</IonBadge>
+                  )}
+                  <IonButton
+                    slot="end"
+                    fill="clear"
+                    color="danger"
+                    onClick={(e) => handleDeleteItem(item.id, e)}
+                  >
                     <IonIcon icon={trashOutline} />
                   </IonButton>
-                </IonButtons>
-              </IonItem>
-            ))}
-          </IonList>
-        )}
-        
-        {/* ✨ PAGINARE - Butoane Previous/Next */}
-        {!loading && items.length > 0 && (
-          <div className="pagination-container">
-            <IonButton 
-              disabled={page === 1} 
-              onClick={() => setPage(prev => Math.max(1, prev - 1))}
-            >
-              Previous
-            </IonButton>
-            
-            <IonText>
-              <p>
-                Page {page} of {totalPages} ({total} total items)
-              </p>
-            </IonText>
-            
-            <IonButton 
-              disabled={page >= totalPages} 
-              onClick={() => setPage(prev => Math.min(totalPages, prev + 1))}
-            >
-              Next
-            </IonButton>
-          </div>
-        )}
-        
-        <IonFab vertical="bottom" horizontal="end" slot="fixed">
-          <IonFabButton onClick={() => setShowModal(true)}>
-            <IonIcon icon={addOutline} />
-          </IonFabButton>
-        </IonFab>
-      
-        {/* Modal Create */}
-        <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
-          <IonHeader>
-            <IonToolbar color="primary">
-              <IonTitle>New Item</IonTitle>
-              <IonButtons slot="end">
-                <IonButton onClick={() => setShowModal(false)}>Cancel</IonButton>
-              </IonButtons>
-            </IonToolbar>
-          </IonHeader>
-          <IonContent className="ion-padding">
-            <IonItem>
-              <IonLabel position="floating">Item Text</IonLabel>
-              <IonInput
-                value={newItemText}
-                onIonChange={(e) => setNewItemText(e.detail.value || '')}
-                maxlength={200}
-              />
-            </IonItem>
-            <IonItem>
-              <IonLabel position="stacked">Due Date (Optional)</IonLabel>
-              <IonDatetime
-                value={newItemDueDate}
-                onIonChange={(e) => setNewItemDueDate(e.detail.value as string || '')}
-                presentation="date"
-                min={new Date().toISOString()}
-              />
-            </IonItem>
-            <IonButton expand="block" onClick={handleCreateItem} style={{marginTop: '20px'}}>
-              Create Item
-            </IonButton>
-          </IonContent>
-        </IonModal>
-
-        {/* Modal Date Filter */}
-        <IonModal isOpen={showDateFilterModal} onDidDismiss={() => setShowDateFilterModal(false)}>
-          <IonHeader>
-            <IonToolbar color="primary">
-              <IonTitle>Filter by Date</IonTitle>
-              <IonButtons slot="end">
-                <IonButton onClick={() => setShowDateFilterModal(false)}>Close</IonButton>
-              </IonButtons>
-            </IonToolbar>
-          </IonHeader>
-          <IonContent className="ion-padding">
-            <IonList>
-              <IonItem button onClick={() => handleDateFilterChange('all')}>
-                <IonLabel>All Dates</IonLabel>
-              </IonItem>
-              <IonItem button onClick={() => handleDateFilterChange('today')}>
-                <IonLabel>Today</IonLabel>
-              </IonItem>
-              <IonItem button onClick={() => handleDateFilterChange('tomorrow')}>
-                <IonLabel>Tomorrow</IonLabel>
-              </IonItem>
-              <IonItem button onClick={() => handleDateFilterChange('this-week')}>
-                <IonLabel>This Week</IonLabel>
-              </IonItem>
-              <IonItem button onClick={() => handleDateFilterChange('overdue')}>
-                <IonLabel color="danger">Overdue</IonLabel>
-              </IonItem>
+                </IonItem>
+              ))}
             </IonList>
-            
-            <IonCard>
-              <IonCardHeader><IonCardTitle>Custom Range</IonCardTitle></IonCardHeader>
-              <IonCardContent>
-                <IonItem>
+
+            <IonInfiniteScroll onIonInfinite={loadMoreItems}>
+              <IonInfiniteScrollContent loadingText="Loading more items" />
+            </IonInfiniteScroll>
+          </>
+        )}
+      </IonContent>
+
+      <IonFab vertical="bottom" horizontal="end" slot="fixed">
+        <IonFabButton color="primary" onClick={() => setShowModal(true)}>
+          <IonIcon icon={addOutline} />
+        </IonFabButton>
+      </IonFab>
+
+      <IonModal isOpen={showModal} onDidDismiss={() => setShowModal(false)}>
+        <IonHeader>
+          <IonToolbar>
+            <IonTitle>Add Item</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={() => setShowModal(false)}>Close</IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent className="ion-padding">
+          <IonInput
+            label="Text"
+            value={newItemText}
+            onIonChange={(e) => setNewItemText(e.detail.value!)}
+          />
+          <IonDatetime
+            presentation="date"
+            value={newItemDueDate}
+            onIonChange={(e) => setNewItemDueDate(e.detail.value as string)}
+          />
+          <IonButton expand="block" onClick={handleCreateItem}>
+            Add Item
+          </IonButton>
+        </IonContent>
+      </IonModal>
+
+      <IonModal isOpen={showDateFilterModal} onDidDismiss={() => setShowDateFilterModal(false)}>
+        <IonHeader>
+          <IonToolbar>
+            <IonTitle>Date Filters</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={() => setShowDateFilterModal(false)}>Close</IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent className="ion-padding">
+          {['all', 'today', 'tomorrow', 'this-week', 'overdue'].map((filter) => (
+            <IonButton
+              key={filter}
+              expand="block"
+              onClick={() => handleDateFilterChange(filter as DateFilterType)}
+              color={dateFilter === filter ? 'primary' : 'medium'}
+            >
+              {filter.replace('-', ' ')}
+            </IonButton>
+          ))}
+
+          <IonCard>
+            <IonCardHeader>
+              <IonCardTitle>Custom Range</IonCardTitle>
+            </IonCardHeader>
+            <IonCardContent>
+              <IonItem>
                   <IonLabel position="stacked">Start Date</IonLabel>
                   <IonDatetime
-                    value={customStartDate}
-                    onIonChange={(e) => setCustomStartDate(e.detail.value as string || '')}
                     presentation="date"
+                    value={customStartDate}
+                    onIonChange={(e) => setCustomStartDate(e.detail.value as string)}
                   />
                 </IonItem>
-                <IonItem>
+
+              <IonItem>
                   <IonLabel position="stacked">End Date</IonLabel>
                   <IonDatetime
-                    value={customEndDate}
-                    onIonChange={(e) => setCustomEndDate(e.detail.value as string || '')}
                     presentation="date"
+                    value={customEndDate}
+                    onIonChange={(e) => setCustomEndDate(e.detail.value as string)}
                   />
-                </IonItem>
-                <IonButton expand="block" onClick={applyCustomDateFilter} style={{marginTop: '10px'}}>
-                  Apply Custom Filter
-                </IonButton>
-              </IonCardContent>
-            </IonCard>
-          </IonContent>
-        </IonModal>
-      </IonContent>
+              </IonItem>
+
+              <IonButton expand="block" onClick={applyCustomDateFilter}>
+                Apply Range
+              </IonButton>
+            </IonCardContent>
+          </IonCard>
+        </IonContent>
+      </IonModal>
     </IonPage>
   );
 };
